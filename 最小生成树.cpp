@@ -1,0 +1,234 @@
+#include <iostream>
+#include <vector>
+#include <algorithm>
+#include <cstring>
+#include <windows.h>
+#include <fstream>
+#include <GL/gl.h>
+#include <GL/glu.h>
+#include <GL/glut.h>
+using namespace std;
+
+const int MVNum = 100; // 最大顶点数
+typedef int VerTexType; // 顶点数据类型
+typedef int Otherlnfo; // 边权值类型
+
+// 边结点
+struct ArcNode {
+    int adjvex; // 邻接点在数组中的下标
+    Otherlnfo info; // 边权值
+    ArcNode* nextaec; // 指向下一条边的指针
+};
+
+// 顶点结点
+struct VNode {
+    VerTexType data; // 顶点数据
+    ArcNode* firstarc; // 指向第一条边的指针
+};
+
+typedef VNode AdjList[MVNum]; // 邻接表类型
+
+// 邻接表存储的图
+struct ALGraph {
+    AdjList vertices; // 邻接表数组
+    int venxnum, arcnum; // 顶点数和边数
+};
+
+// 边，用于 Kruskal 算法中排序
+struct Edge {
+    int u, v, w;
+    Edge(int u, int v, int w) : u(u), v(v), w(w) {}
+};
+
+// 根据顶点数据查找顶点在数组中的下标
+int LocateVex(ALGraph& G, VerTexType v) {
+    for (int i = 0; i < G.venxnum; i++) {
+        if (G.vertices[i].data == v) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+// 边比较函数，按边权值从小到大排序
+bool cmp(Edge a, Edge b) {
+    return a.w < b.w;
+}
+
+// 并查集查找函数，查找元素所在集合的根结点
+int find(vector<int>& parent, int x) {
+    if (parent[x] != x) {
+        parent[x] = find(parent, parent[x]);
+    }
+    return parent[x];
+}
+
+// 并查集合并函数，合并两个集合
+void unionn(vector<int>& parent, vector<int>& rank, int x, int y) {
+    int rootx = find(parent, x);
+    int rooty = find(parent, y);
+    if (rootx != rooty) {
+        if (rank[rootx] > rank[rooty]) {
+            parent[rooty] = rootx;
+        }
+        else if (rank[rootx] < rank[rooty]) {
+            parent[rootx] = rooty;
+        }
+        else {
+            parent[rooty] = rootx;
+            rank[rootx] += 1;
+        }
+    }
+}
+
+// 创建无向图函数，读取文件创建图
+void CreateUDG(ALGraph& G) {
+    string filename;
+    cout << "请输入要读取的文件名：";
+    cin >> filename;
+    FILE* fp;
+    errno_t err = freopen_s(&fp, filename.c_str(), "r", stdin);
+    if (err != 0) {
+        cout << "无法打开文件！" << endl;
+        exit(1);
+    }
+
+    cin >> G.venxnum >> G.arcnum; // 从文件中读取顶点数和边数
+    for (int i = 0; i < G.venxnum; i++) { // 遍历每个顶点
+        cin >> G.vertices[i].data; // 从文件中读取顶点数据
+        G.vertices[i].firstarc = NULL;
+    }
+    for (int k = 0; k < G.arcnum; k++) { // 遍历每条边
+        VerTexType v1, v2;
+        Otherlnfo w;
+        cin >> v1 >> v2 >> w; // 从文件中读取边的两个顶点和边权值
+        int i = LocateVex(G, v1); // 查找顶点 v1 在数组中的下标
+        int j = LocateVex(G, v2); // 查找顶点 v2 在数组中的下标
+
+        ArcNode* p1 = new ArcNode;
+        p1->adjvex = j; // 设置邻接点下标
+        p1->info = w; // 设置边权值
+        p1->nextaec = G.vertices[i].firstarc;
+        G.vertices[i].firstarc = p1;
+
+        ArcNode* p2 = new ArcNode;
+        p2->adjvex = i; // 设置邻接点下标
+        p2->info = w; // 设置边权值
+        p2->nextaec = G.vertices[j].firstarc;
+        G.vertices[j].firstarc = p2;
+    }
+}
+
+vector<pair<float, float>> nodes;
+vector<pair<int, int>> edges;
+
+string filePath = "nm.txt"; // 第一张图像的文件路径
+string nextFilePath = "xzj.txt"; // 第二张图像的文件路径
+int timerId = -1;
+bool isFirstFrame = true;
+
+void readGraphFromFile(const string& filePath) {
+    edges.clear();
+    nodes.clear();
+    ifstream file(filePath);
+    if (!file.is_open()) {
+        cerr << "Failed to open file: " << filePath << endl;
+        return;
+    }
+
+    int numNodes, numEdges;
+    file >> numNodes;
+    for (int i = 0; i < numNodes; i++) {
+        float x, y;
+        file >> x >> y;
+        nodes.emplace_back(x, y);
+    }
+
+    file >> numEdges;
+    for (int i = 0; i < numEdges; i++) {
+        int a, b;
+        file >> a >> b;
+        edges.emplace_back(a - 1, b - 1);
+    }
+
+    file.close();
+}
+
+// Kruskal 算法求最小生成树
+void Kruskal(ALGraph& G) {
+    vector<Edge> edges; // 存储所有边
+    for (int i = 0; i < G.venxnum; i++) { // 遍历所有顶点和边，将边存入数组中
+        for (ArcNode* p = G.vertices[i].firstarc; p; p = p->nextaec) {
+            if (i < p->adjvex) { // 避免重复添加边
+                edges.push_back(Edge(i, p->adjvex, p->info));
+            }
+        }
+    }
+    sort(edges.begin(), edges.end(), cmp); // 将边按权值从小到大排序
+    vector<int> parent(G.venxnum), rank(G.venxnum); // 初始化并查集
+    for (int i = 0; i < G.venxnum; i++) {
+        parent[i] = i;
+        rank[i] = 1;
+    }
+    int ans = 0; // 最小生成树的总权值
+    cout << "最小生成树的边为：\n";
+    for (auto e : edges) { // 遍历所有边
+        int u = e.u, v = e.v, w = e.w;
+        if (find(parent, u) != find(parent, v)) { // 如果两个顶点不在同一个集合中，说明这条边不会形成环
+            ans += w;
+            unionn(parent, rank, u, v); // 合并两个集合
+            cout << G.vertices[u].data << " " << G.vertices[v].data << " " << w << endl;
+        }
+    }
+    cout << "最小生成树的总权值为：" << ans << endl;
+}
+
+void display()
+{
+    if (isFirstFrame) {
+        readGraphFromFile(filePath);
+        isFirstFrame = false;
+    }
+    else {
+        readGraphFromFile(nextFilePath);
+    }
+
+    glClear(GL_COLOR_BUFFER_BIT);
+    // 绘制边
+    glColor3f(1.0f, 1.0f, 1.0f);
+    glBegin(GL_LINES);
+    for (auto edge : edges) {
+        glVertex2f(nodes[edge.first].first, nodes[edge.first].second);
+        glVertex2f(nodes[edge.second].first, nodes[edge.second].second);
+    }
+    glEnd();
+
+    // 绘制节点
+    glColor3f(1.0f, 0.0f, 0.0f);
+    glPointSize(10.0f);
+    glBegin(GL_POINTS);
+    for (auto node : nodes) {
+        glVertex2f(node.first, node.second);
+    }
+    glEnd();
+    glFlush();
+}
+void timer(int value) {
+    glutPostRedisplay();
+    glutTimerFunc(3000, timer, 0);
+}
+
+int main(int argc, char** argv)
+{
+    ALGraph G;
+    CreateUDG(G);
+    Kruskal(G);
+    glutInit(&argc, argv);
+    glutCreateWindow("Undirected Graph");
+    glutInitWindowSize(320, 320);
+    glutInitWindowPosition(50, 50);
+    glutDisplayFunc(display);
+    glutTimerFunc(3000, timer, 0);// 注册定时器回调函数
+    glutMainLoop();
+    return 0;
+}
